@@ -1,0 +1,7 @@
+type: framework
+content:
+  - Initial setup
+  - Context manager agent
+  - Commentor agent
+  - Review and posting agent
+  - Integration with GitHub Actions workflows

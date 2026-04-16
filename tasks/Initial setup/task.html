@@ -1,0 +1,67 @@
+<div class="step-text">
+<h5 id="description">Description</h5><p>Code review is a central part of every software development pipeline. It involves examining someone’s code changes by one or more developers other than the author. Reviews typically happen in a pull/merge-request workflow: you open a request with your changes, reviewers check your work, they leave comments, and—once all feedback is addressed—the code is approved and merged.</p><p>Code reviews make it easy to catch bugs early, maintain consistency, share knowledge, and improve maintainability. However, since reviews require humans to check the changes and provide comments, it may take a long time before reviewers are available to check the review. To save some time and effort, we can offload some of these routine tasks to an AI agent while allowing human reviewers to do the final checks and merging (if needed).</p><p>The agent would be able to perform common code review tasks and provide feedback. These would help catch obvious issues early and provide immediate feedback before human reviewers check the more complex issues. This is a high-level view of the architecture of the system we will be building:</p><p style="text-align: center"><picture><source media="(max-width: 480px)" srcset="https://ucarecdn.com/f8dade7b-6583-46b1-b16f-7d17a8058c80/-/stretch/off/-/resize/480x/-/format/webp/ 1x,https://ucarecdn.com/f8dade7b-6583-46b1-b16f-7d17a8058c80/-/stretch/off/-/resize/960x/-/format/webp/ 2x,https://ucarecdn.com/f8dade7b-6583-46b1-b16f-7d17a8058c80/-/stretch/off/-/resize/1440x/-/format/webp/ 3x" type="image/webp"/><source media="(max-width: 800px)" srcset="https://ucarecdn.com/f8dade7b-6583-46b1-b16f-7d17a8058c80/-/stretch/off/-/resize/800x/-/format/webp/ 1x,https://ucarecdn.com/f8dade7b-6583-46b1-b16f-7d17a8058c80/-/stretch/off/-/resize/1600x/-/format/webp/ 2x,https://ucarecdn.com/f8dade7b-6583-46b1-b16f-7d17a8058c80/-/stretch/off/-/resize/2400x/-/format/webp/ 3x" type="image/webp"/><source srcset="https://ucarecdn.com/f8dade7b-6583-46b1-b16f-7d17a8058c80/-/stretch/off/-/resize/1100x/-/format/webp/ 1x,https://ucarecdn.com/f8dade7b-6583-46b1-b16f-7d17a8058c80/-/stretch/off/-/resize/2200x/-/format/webp/ 2x,https://ucarecdn.com/f8dade7b-6583-46b1-b16f-7d17a8058c80/-/stretch/off/-/resize/3000x/-/format/webp/ 3x" type="image/webp"/><img alt="System architecture showing all the agents." height="641" src="https://ucarecdn.com/f8dade7b-6583-46b1-b16f-7d17a8058c80/" width="800"/></picture></p><p>Before we start developing our agent, we need to set up a repository to test it out. This demo repository helps us develop and refine our agent before using it in other code bases. The <a href="https://github.com/the-nulldev/recipes-api/archive/refs/heads/main.zip" rel="noopener noreferrer nofollow" target="_blank">provided code</a> is for a recipe API application built with Django and the Django Rest Framework to add, view, and manage recipes. You don't need to know Django or how this code works for this project, it is just a demo repository for testing (ideally, the agent should work with any repository given its URL).</p><p>You need to create this repository in your GitHub account so that you have full control of it. Go ahead and download the source code and extract it in a different folder from the one containing this project to avoid any conflicts. Once you’ve downloaded it, feel free to follow the instructions in the <code class="language-shell">README.md</code> file to run it locally. This is, however, not necessary.</p><div class="alert alert-primary"><p>Needless to say, you need to have <a href="https://git-scm.com/downloads" rel="noopener noreferrer nofollow" target="_blank">git</a> installed and a <a href="https://github.com/" rel="noopener noreferrer nofollow" target="_blank">GitHub account</a>.</p></div><p>Create a new repository in your account and name it <code class="language-shell">recipes-api</code>. Once created, commit and push the code to your repo. You can use any method you are comfortable with, but this is how you can do it from the command line:</p><pre><code class="language-shell">git init
+git add .
+git commit -m "Initial commit"
+git remote add origin &lt;the url to your recipes-api repository&gt;
+git branch -M main
+git push -u origin main</code></pre><p>Navigate to your GitHub Account and ensure that the files were added successfully. Your repo should look like this:</p><pre><code class="language-bash">recipes-api/                     # Root directory of the project
+    │
+    ├── .github/                 # directory for GitHub-specific files
+    │   └── workflows/           # directory for GitHub Actions workflow files
+    │       └── ci.yml           # contains workflow file ci.yml
+    │
+    ├── app/                     # main application directory
+    ├── recipe/                  # settings and other Django files
+    ├── pyproject.toml           # build system and tool configurations.
+    ├──  .....                   # other files
+    └── README.md                # project description file</code></pre><p>Next, you need to create a new branch in the repo. You can name it anything, but let's assume it is a new <code class="language-shell">feature/recipe-ratings</code>, branch where a developer has added a new feature to rate recipes. Once you have the new branch, replace the contents of the following files with the given content:</p><p><code class="language-shell">app/serializers.py</code>:</p><pre><code class="language-python">from rest_framework import serializers
+from .models import Recipe, RecipeRating
+
+class RecipeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Recipe
+        fields = ["id", "title", "description", "time_minutes", "price"]
+
+class RecipeRatingSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = RecipeRating
+        fields = ["id", "stars", "created_at"]
+        read_only_fields = ["id", "created_at"]
+
+    def validate_stars(self, value):
+        if not (1 &lt;= value &lt;= 5):
+            raise serializers.ValidationError("Rating must be between 1 and 5.")
+        return value</code></pre><p><code class="language-shell">app/models.py:</code></p><pre><code class="language-python">from django.db import models
+from django.conf import settings
+
+
+class Recipe(models.Model):
+    title = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    time_minutes = models.IntegerField()
+    price = models.DecimalField(max_digits=5, decimal_places=2)
+
+    def __str__(self):
+        return self.title
+
+
+class RecipeRating(models.Model):
+    recipe = models.ForeignKey(
+        Recipe, on_delete=models.CASCADE, related_name="ratings"
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE
+    )
+    stars = models.PositiveSmallIntegerField(
+        choices=[(i, f"{i} star{'s' if i&gt;1 else ''}") for i in range(1, 6)]
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("recipe", "user")
+        ordering = ["-created_at"]</code></pre><p>Commit and push these changes to your repository. Then, head over to your repository on GitHub and open a new pull request for these changes. This mirrors the typical contribution flow in GitHub, where you clone the repo, create a new branch from <code class="language-shell">main</code>, add changes, commit, push, and open a new PR. We will use this PR to check how our agent responds.</p><div class="alert alert-primary"><p>Notice that after a few seconds, a new comment is added to the PR with coverage report details. Although we won't use it, an agent can use information from this comment to know the outcome of tests.</p></div><p>Finally, we need to authorize the agent to post review comments for the PR once generated. Thus, let's create a new fine-grained access token and scope it to the <code class="language-shell">recipes-api</code> repository to grant these permissions. Assign repository permissions to:</p><ul><li><p>Read and write issues — this allows the agent to both read and write issues and issue comments;</p></li><li><p>Read and write pull requests — this allows the agent to both read and write pull requests and pull request comments.</p></li></ul><p>You can create access tokens in your GitHub account settings under <a href="https://github.com/settings/personal-access-tokens/new" rel="noopener noreferrer nofollow" target="_blank">developer settings</a>:</p><p style="text-align: center"><picture><source media="(max-width: 480px)" srcset="https://ucarecdn.com/fe02393f-f367-4837-b22f-b10ac871b5dc/-/stretch/off/-/resize/480x/-/format/webp/ 1x,https://ucarecdn.com/fe02393f-f367-4837-b22f-b10ac871b5dc/-/stretch/off/-/resize/960x/-/format/webp/ 2x,https://ucarecdn.com/fe02393f-f367-4837-b22f-b10ac871b5dc/-/stretch/off/-/resize/1440x/-/format/webp/ 3x" type="image/webp"/><source media="(max-width: 800px)" srcset="https://ucarecdn.com/fe02393f-f367-4837-b22f-b10ac871b5dc/-/stretch/off/-/resize/800x/-/format/webp/ 1x,https://ucarecdn.com/fe02393f-f367-4837-b22f-b10ac871b5dc/-/stretch/off/-/resize/1600x/-/format/webp/ 2x,https://ucarecdn.com/fe02393f-f367-4837-b22f-b10ac871b5dc/-/stretch/off/-/resize/2400x/-/format/webp/ 3x" type="image/webp"/><source srcset="https://ucarecdn.com/fe02393f-f367-4837-b22f-b10ac871b5dc/-/stretch/off/-/resize/1100x/-/format/webp/ 1x,https://ucarecdn.com/fe02393f-f367-4837-b22f-b10ac871b5dc/-/stretch/off/-/resize/2200x/-/format/webp/ 2x,https://ucarecdn.com/fe02393f-f367-4837-b22f-b10ac871b5dc/-/stretch/off/-/resize/3000x/-/format/webp/ 3x" type="image/webp"/><img alt="GitHub developer settings window showing new token creation." height="882" src="https://ucarecdn.com/fe02393f-f367-4837-b22f-b10ac871b5dc/" width="700"/></picture></p><p>Once generated, place the key in your <code class="language-shell">.env</code> file and name the variable <code class="language-shell">GITHUB_TOKEN</code>. That's it. Now, you're ready to create agents to retrieve this context, review, draft a comment, and post it back to GitHub.</p><p>To pass this stage, provide the full URL to your repository in the <code class="language-shell">main.py</code> file:</p><pre><code class="language-python">"""
+Please provide the full URL to your recipes-api GitHub repository below.
+"""
+
+repo_url = "https://github.com/&lt;your-username&gt;/recipes-api.git"</code></pre><h5 id="objectives">Objectives</h5><p>Here is what you need to do:</p><ul><li><p><a href="https://github.com/the-nulldev/recipes-api/archive/refs/heads/main.zip" rel="noopener noreferrer nofollow" target="_blank">Download</a> the provided code for a recipe API application and extract it into a separate folder to avoid conflicts with the project.</p></li><li><p>Create a new <code class="language-shell">recipes-api</code> repository in your GitHub account and publish the application there.</p></li><li><p>Create a new branch and give it any name you like.</p></li><li><p>While in this new branch, modify the <code class="language-shell">serializers.py</code> and <code class="language-shell">models.py</code> files with the specified changes, commit the changes, and create a new PR.</p></li><li><p>Ensure to give the new PR a meaningful title and detailed description.</p></li><li><p>Generate a new fine-grained GitHub access token scoped only to the <code class="language-shell">recipes-api</code> repository and set the appropriate permissions to read and write issues and PRs. Copy the access token and place it in your <code class="language-shell">.env</code> file for this project (not the <code class="language-shell">recipes-api</code> application), and name the variable <code class="language-shell">GITHUB_TOKEN</code>.</p></li><li><p>Provide the full URL to your repo in the <code class="language-shell">main.py</code> file.</p></li></ul>
+</div>

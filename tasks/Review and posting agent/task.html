@@ -1,0 +1,48 @@
+<div class="step-text">
+<h5 id="description">Description</h5><p>So far, we have two agents: one to fetch details from a GitHub repository, and another one to create a draft comment. Let’s add another agent to this workflow that can review the generated draft comment, check if refinements are needed, and finally post it to GitHub. This agent will need two tools:</p><ul><li><p>A tool to add the final review to the state — this is an <code class="language-python">async</code> function that takes the final review and adds it to the <code class="language-python">final_review</code> key of the state.</p></li><li><p>A tool to post the final comment to GitHub.</p></li></ul><p>To post the review to GitHub, first create a function that takes a PR number and the comment (this is the final review comment). Then, it fetches the PR and uses the <code class="language-python">pr.create_review()</code> function to post the comment on the pull request (this goes to the <code class="language-python">body</code> and is the only value you need to set). Once you have the function, convert it to a tool that the agent can use.</p><p></p><div class="alert alert-primary"> <a href="https://docs.github.com/en/rest/pulls/reviews?apiVersion=2022-11-28#submit-a-review-for-a-pull-request" rel="noopener noreferrer nofollow" target="_blank">Check GitHub docs</a> to learn more about submitting PR reviews. However, you don't strictly need to know all the details. </div><p>Next, let’s create the agent to review and post the review.</p><ul><li><p><code class="language-python">ReviewAndPostingAgent</code></p></li></ul><p>This agent should take check the draft review, check it, request rewrites if necessary, and post it to GitHub. For this agent, use the following system prompt:</p><pre><code class="language-python">You are the Review and Posting agent. You must use the CommentorAgent to create a review comment. 
+Once a review is generated, you need to run a final check and post it to GitHub.
+   - The review must: \n
+   - Be a ~200-300 word review in markdown format. \n
+   - Specify what is good about the PR: \n
+   - Did the author follow ALL contribution rules? What is missing? \n
+   - Are there notes on test availability for new functionality? If there are new models, are there migrations for them? \n
+   - Are there notes on whether new endpoints were documented? \n
+   - Are there suggestions on which lines could be improved upon? Are these lines quoted? \n
+ If the review does not meet this criteria, you must ask the CommentorAgent to rewrite and address these concerns. \n
+ When you are satisfied, post the review to GitHub.  </code></pre><p>In addition, equip this agent with tools to update the state, a good description, and the tool to post a review comment to GitHub. This tools should be able to handoff to the <code class="language-python">CommentorAgent</code>. Once done, add it to the list of agents for your workflow and update the initial state dictionary to include an empty initial <code class="language-python">final_review</code> key. Also, make it the root agent:</p><pre><code class="language-python">agents=[context_agent, commentor_agent, review_and_posting_agent],
+root_agent=review_and_poster_agent.name,
+initial_state={
+    "gathered_contexts": "",
+    "review_comment": "",
+    "final_review": "",
+},</code></pre><p>Update the hand-off property of the <code class="language-python">CommentorAgent</code> to hand off control to this new agent as well as the <code class="language-python">ContextAgent</code>:</p><pre><code class="language-python">can_handoff_to=["ContextAgent", "ReviewAndPostingAgent"]</code></pre><p>Also, add an instruction to the <code class="language-python">CommentorAgent</code> to always request for review:</p><pre><code class="language-python"># ... previous instructions
+- You must hand off to the ReviewAndPostingAgent once you are done drafting a review. </code></pre><p>When you finally invoke the workflow, ensure to specify all the actions you need it to perform and stream all event outputs as before:</p><pre><code class="language-python">      
+from llama_index.core.agent.workflow import AgentOutput, ToolCall, ToolCallResult
+import asyncio
+
+async def main():
+    query = input().strip()
+    prompt = RichPromptTemplate(query)
+
+    handler = workflow_agent.run(prompt.format())
+
+    current_agent = None
+    async for event in handler.stream_events():
+        if hasattr(event, "current_agent_name") and event.current_agent_name != current_agent:
+            current_agent = event.current_agent_name
+            print(f"Current agent: {current_agent}")
+        elif isinstance(event, AgentOutput):
+            if event.response.content:
+                print("\\n\\nFinal response:", event.response.content)
+            if event.tool_calls:
+                print("Selected tools: ", [call.tool_name for call in event.tool_calls])
+        elif isinstance(event, ToolCallResult):
+            print(f"Output from tool: {event.tool_output}")
+        elif isinstance(event, ToolCall):
+            print(f"Calling selected tool: {event.tool_name}, with arguments: {event.tool_kwargs}")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+    git.close()</code></pre><h5 id="objectives">Objectives</h5><p>For this stage, perform the following tasks:</p><ul><li><p>Create two tools for the review and posting agent to use;</p></li><li><p>Remember to convert the function that handles posting to a tool schema that the agent can use using <code class="language-python">FunctionTool.from_defaults()</code>. You don’t need to do this for the <code class="language-python">async</code> function for state management.</p></li><li><p>Create a new agent to review and post the reviewed comment to GitHub.</p></li><li><p>Update the <code class="language-python">CommentorAgent</code> to hand off control to the review agent and also the context agent as before.</p></li><li><p>Update the system prompt for the <code class="language-python">CommentorAgent</code> instructing it to always pass control to the review agent for review.</p></li><li><p>Invoke the workflow and ensure that all agents are working and that a final comment is posted to GitHub for the latest PR.</p></li><li><p>Stream the outputs and ensure that all agents are invoked and utilized as expected.</p></li></ul>
+</div>

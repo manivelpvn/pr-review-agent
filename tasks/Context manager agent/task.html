@@ -1,0 +1,123 @@
+<div class="step-text">
+<h5 id="theory">Theory</h5><p>There are various ways you can orchestrate AI agents. You can use frameworks like <a href="https://langchain-ai.github.io/langgraph/" rel="noopener noreferrer nofollow" target="_blank">LangGraph</a>, <a href="https://docs.llamaindex.ai/en/stable/use_cases/agents/" rel="noopener noreferrer nofollow" target="_blank">LlamaIndex</a>, <a href="https://openai.github.io/openai-agents-python/" rel="noopener noreferrer nofollow" target="_blank">OpenAI Agents SDK</a>, <a href="https://ai.pydantic.dev/agents/" rel="noopener noreferrer nofollow" target="_blank">Pydantic AI</a>, and many more. You can also build your own orchestration logic from scratch, but these tools make it easier and faster to tie everything together. Regardless of which framework you use, the idea is the same — a system that uses LLMs as its computational engine to exhibit autonomous behavior, including decision-making, tool interaction, and environmental adaptation.</p><p>We will use LlamaIndex in this project to run a multi-agent setup. This will give you the basic concepts you need to create AI agents regardless of the platform or framework you're working with. So, let’s first learn a thing or two about LlamaIndex. Simply put, <strong>LlamaIndex</strong> is a framework for building LLM applications. It helps you build RAG applications, chatbots, agents, and <a href="https://docs.llamaindex.ai/en/stable/#use-cases" rel="noopener noreferrer nofollow" target="_blank">others</a> with ease. Let’s discuss a few LlamaIndex concepts that you will need for this project.</p><p><strong>LLMs</strong></p><p>In any LLM application, you need an easy way to work with your LLM providers. With LlamaIndex, all you need to do is initialize your provider:</p><pre><code class="language-python"># pip install llama-index-llms-openai
+
+from llama_index.llms.openai import OpenAI
+import dotenv
+import os
+
+dotenv.load_dotenv()
+
+llm = OpenAI(
+    model=os.getenv("OPENAI_MODEL"),
+    api_key=os.getenv("OPENAI_API_KEY"),
+    api_base=os.getenv("OPENAI_BASE_URL"),
+)</code></pre><p>The setup is the same for other <a href="https://docs.llamaindex.ai/en/stable/module_guides/models/llms/modules/" rel="noopener noreferrer nofollow" target="_blank">chat or embeddings model</a> providers as well. Once you initialize the model, you can use it anywhere in your application with ease:</p><pre><code class="language-python">agent = FunctionAgent(
+    llm=llm,
+    name="NewAgent",
+	tools=[tool1, tool2, tool3]
+    # ... other params
+)
+</code></pre><p><strong>Tools</strong></p><p>Tools allow your LLM applications or agents to interact with the environment and perform actions. In LlamaIndex, you create functions that perform the actions you’d like your agent to perform, then convert them to tools:</p><pre><code class="language-python"># pip install llama-index-core
+
+from llama_index.core.tools import FunctionTool
+
+def multiply(num1: float, num2: float) -&gt; float:
+    """Use this tool for multiplying two numbers"""
+    ...
+
+tool = FunctionTool.from_defaults(
+    multiply,
+)
+</code></pre><p>Remember that the LLM uses the function name and its docstring to determine if it is the one it needs to call to complete the assigned task. So, make sure these are informative.</p><p></p><div class="alert alert-primary"> You can learn more about LlamaIndex tools <a href="https://docs.llamaindex.ai/en/stable/module_guides/deploying/agents/tools/" rel="noopener noreferrer nofollow" target="_blank">in the docs.</a> </div><p><strong>Agents</strong></p><p>An agent uses LLMs to determine the steps and actions it needs to take to achieve a specified task. For example, let’s look through the thought process of a <a href="https://arxiv.org/abs/2210.03629" rel="noopener noreferrer nofollow" target="_blank">ReAct agent</a> when asked a question:</p><pre><code class="language-no-highlight">&gt; A new PR number 4 has been created. What is its title?
+
+Thought: The current language of the user is: English. I need to use a tool to help me answer the question.
+Action: get_pull_request_details
+Action Input: {"pr_number": 4}
+Output from tool: {'...', 'title': 'Fixed unknown model error when adding a new item.', 'body': 'I have added a.....'}
+Thought: I can answer without using any more tools. I'll use the user's language to answer.
+Answer: The title of PR number 4 is "Fixed unknown model error when adding a new item."</code></pre><p>As you can see, the agent is able to figure out actions it must take and use the available tools to take the actions it needs to take—like retrieve PR details to know the title. In LlamaIndex, you use classes like <code class="language-python">FunctionAgent</code> or <code class="language-python">ReActAgent</code> or <code class="language-python">CodeAgent</code> to create various types of agents. These classes implement the logic needed under the hood, so you can focus more on what you need to build. To create an agent using these classes, the syntax is simple:</p><pre><code class="language-python"># pip install llama-index-core
+
+from llama_index.core.agent.workflow import FunctionAgent
+
+my_agent = FunctionAgent(
+    llm=llm,
+    name="MyAgent",
+    tools=[web_search_tool, calculator_tool, time_tool],
+)
+</code></pre><p>Then, invoke the agent with a query:</p><pre><code class="language-python">response = await my_agent.run("What is the current time? Also, search the web for good restaurants in London.")</code></pre><p>In multi-agent systems, you will need to use <code class="language-python">AgentWorkflow</code> to orchestrate multiple agents. Check out <a href="https://docs.llamaindex.ai/en/stable/understanding/agent/multi_agent/" rel="noopener noreferrer nofollow" target="_blank">the guide on creating a multi-agent</a> workflow with LlamaIndex to learn more.</p><p></p><div class="alert alert-primary"> You need to run these in an <code class="language-python">async</code> function. </div><p><strong>State</strong></p><p>In multi-agent setups, multiple agents use the state to communicate. LlamaIndex uses the <code class="language-python">Context</code> object to maintain state between runs:</p><pre><code class="language-python"># pip install llama-index-core
+
+from llama_index.core.workflow import Context
+
+# ... workflow with multiple agents
+context = Context(workflow)
+response = await workflow.run("What is the current time and date?", ctx=context)
+
+# The time and date now is 10:42:54 PM on April 29, 2025, in New York.</code></pre><p>Now, other tools and agents should be able to use this context:</p><pre><code class="language-python">response = await context_agent.run("What did you say the time and date was?", ctx=context)
+# I reported the current time as 10:42 PM on Tuesday, April 29, 2025 (New York time).</code></pre><p>Your agents and workflows can use special tools to modify and update state to ensure your tools and agents always stay updated in case of changes. Here is a tool to add username to context once it is retrieved by an agent in the workflow:</p><pre><code class="language-python">async def add_username_to_state(ctx: Context, username: str) -&gt; str:
+    """Useful for adding the username to the state."""
+    current_state = await ctx.get("state")
+    current_state["username"] = username
+    await ctx.set("state", current_state)
+    return "State updated with report contexts. "</code></pre><p>Notice that the first parameter is the context object, and the second one is the item to add to the state. For your agent to use and modify state, add this special function to the tools list for your agent:</p><pre><code class="language-python">user_agent = FunctionAgent(
+    llm=llm,
+    name="UserAgent",
+    description="Gathers usernames...",
+    tools=[user_details_tool, about_tool, add_username_to_state]</code></pre><p></p><div class="alert alert-primary"> Check out the docs to learn more about <a href="https://docs.llamaindex.ai/en/stable/understanding/agent/state/" rel="noopener noreferrer nofollow" target="_blank">maintaining state</a> in agents and LLM workflows. </div><p>There is a lot to learn about working with LlamaIndex to orchestrate agents and other LLM workflows. If you are ever stuck, check out any of <a href="https://docs.llamaindex.ai/en/stable/understanding/" rel="noopener noreferrer nofollow" target="_blank">these tutorials</a> and <a href="https://docs.llamaindex.ai/en/stable/module_guides/" rel="noopener noreferrer nofollow" target="_blank">these guides</a> from LlamaIndex to learn more about what you want to accomplish. You should also use your IDE's code-completion capabilities to identify parameters for unfamiliar classes and functions:</p><p style="text-align: center"><picture><source media="(max-width: 480px)" srcset="https://ucarecdn.com/038c297b-1504-4dfd-b91b-60ea2d274e44/-/stretch/off/-/resize/480x/-/format/webp/ 1x,https://ucarecdn.com/038c297b-1504-4dfd-b91b-60ea2d274e44/-/stretch/off/-/resize/960x/-/format/webp/ 2x,https://ucarecdn.com/038c297b-1504-4dfd-b91b-60ea2d274e44/-/stretch/off/-/resize/1440x/-/format/webp/ 3x" type="image/webp"/><source media="(max-width: 800px)" srcset="https://ucarecdn.com/038c297b-1504-4dfd-b91b-60ea2d274e44/-/stretch/off/-/resize/800x/-/format/webp/ 1x,https://ucarecdn.com/038c297b-1504-4dfd-b91b-60ea2d274e44/-/stretch/off/-/resize/1600x/-/format/webp/ 2x,https://ucarecdn.com/038c297b-1504-4dfd-b91b-60ea2d274e44/-/stretch/off/-/resize/2400x/-/format/webp/ 3x" type="image/webp"/><source srcset="https://ucarecdn.com/038c297b-1504-4dfd-b91b-60ea2d274e44/-/stretch/off/-/resize/1100x/-/format/webp/ 1x,https://ucarecdn.com/038c297b-1504-4dfd-b91b-60ea2d274e44/-/stretch/off/-/resize/2200x/-/format/webp/ 2x,https://ucarecdn.com/038c297b-1504-4dfd-b91b-60ea2d274e44/-/stretch/off/-/resize/3000x/-/format/webp/ 3x" type="image/webp"/><img alt="IDE code completion capabilities" height="288" src="https://ucarecdn.com/038c297b-1504-4dfd-b91b-60ea2d274e44/" width="843"/></picture></p><p>As you can see, LlamaIndex provides handy utilities that you can use to easily orchestrate LLM applications. However, you will probably spend the majority of the time creating the tool functions that your agent will use to perform actions. These tools are very specific and will largely depend on your use case.</p><p>Speaking of tools, our system will need them to interact with the GitHub API. If it needs to fetch a specific file in the repo, there must be a tool to do just that. If it needs to fetch or post comments on the latest pull request, it needs a tool for that. You can use the <a href="https://pygithub.readthedocs.io/en/stable/introduction.html" rel="noopener noreferrer nofollow" target="_blank">PyGitHub</a> library to streamline this process, or just use the requests library to fetch the details you need. However, the library makes it easier:</p><pre><code class="language-python">git = Github(os.getenv("GITHUB_TOKEN")) if os.getenv("GITHUB_TOKEN") else None
+
+repo_url = "https://github.com/user-name/recipes-api.git"
+repo_name = repo_url.split('/')[-1].replace('.git', '')
+username = repo_url.split('/')[-2]
+full_repo_name = f"{username}/{repo_name}"
+
+if git is not None:
+    repo = git.get_repo(full_repo_name)
+    file_content = repo.get_contents("main.py").decoded_content.decode('utf-8')</code></pre><p>Each GitHub API endpoint needs different parameters and returns different results. You need to consult the <a href="https://pygithub.readthedocs.io/en/stable/reference.html" rel="noopener noreferrer nofollow" target="_blank">API reference</a> to determine the parameters you need and the outputs you should expect. Again, the IDEs code-completion capabilities will be very useful here:</p><p style="text-align: center"><picture><source media="(max-width: 480px)" srcset="https://ucarecdn.com/130962ce-e3bf-4c67-8e7f-fd8e8aa547cf/-/stretch/off/-/resize/480x/-/format/webp/ 1x,https://ucarecdn.com/130962ce-e3bf-4c67-8e7f-fd8e8aa547cf/-/stretch/off/-/resize/960x/-/format/webp/ 2x,https://ucarecdn.com/130962ce-e3bf-4c67-8e7f-fd8e8aa547cf/-/stretch/off/-/resize/1440x/-/format/webp/ 3x" type="image/webp"/><source media="(max-width: 800px)" srcset="https://ucarecdn.com/130962ce-e3bf-4c67-8e7f-fd8e8aa547cf/-/stretch/off/-/resize/800x/-/format/webp/ 1x,https://ucarecdn.com/130962ce-e3bf-4c67-8e7f-fd8e8aa547cf/-/stretch/off/-/resize/1600x/-/format/webp/ 2x,https://ucarecdn.com/130962ce-e3bf-4c67-8e7f-fd8e8aa547cf/-/stretch/off/-/resize/2400x/-/format/webp/ 3x" type="image/webp"/><source srcset="https://ucarecdn.com/130962ce-e3bf-4c67-8e7f-fd8e8aa547cf/-/stretch/off/-/resize/1100x/-/format/webp/ 1x,https://ucarecdn.com/130962ce-e3bf-4c67-8e7f-fd8e8aa547cf/-/stretch/off/-/resize/2200x/-/format/webp/ 2x,https://ucarecdn.com/130962ce-e3bf-4c67-8e7f-fd8e8aa547cf/-/stretch/off/-/resize/3000x/-/format/webp/ 3x" type="image/webp"/><img alt="IDE code completion capabilities." height="256" src="https://ucarecdn.com/130962ce-e3bf-4c67-8e7f-fd8e8aa547cf/" width="843"/></picture></p><h5 id="description">Description</h5><p>We cannot provide comprehensive and tailored review comments if we cannot retrieve the needed context from the repository. Therefore, let's create an agent that can fetch data from the repository. This agent will need a bunch of tools to gather the needed information. The number of tools you can create to fetch different types of data is endless, but let's start with these:</p><ul><li><p>PR details tool — this should return details about the pull request given the number, such as the author, title, body, commit SHAs, state, and more.</p></li><li><p>Files tool — given a file path, this tool can fetch the contents of the file from the repository.</p></li><li><p>PR commits details tool — given the commit SHA, this function can retrieve information about the commit, such as the files that changed, and return that information.</p></li></ul><p>Let’s break down the details of these tools and the agent.</p><ul><li><p>PR details</p></li></ul><p>This tool should fetch the pull request given the PR number. All attributes we need can be accessed from the PR. We need:</p><ul><li><p>The PR author — this can be accessed from <code class="language-python">pr.user.login</code>.</p></li><li><p>The PR title.</p></li><li><p>The PR body.</p></li><li><p>The diff URL.</p></li><li><p>The PR state.</p></li><li><p>The commit SHAs.</p></li></ul><p>To get all the commits and their unique IDs (SHAs):</p><pre><code class="language-python">commit_SHAs = []
+commits = pull_request.get_commits()
+
+for c in commits:
+    commit_SHAs.append(c.sha)</code></pre><p>Once you have this information, create a dictionary containing all these PR details and return. The agent will use this information when calling other tools and know the arguments to pass to them.</p><ul><li><p>PR commit details tool</p></li></ul><p>The agent will use the commit SHA from the PR details tool and pass it to this tool to view the commit details. So, given the commit SHA, you should access the commit object and return the commit details such as:</p><ul><li><p>filename</p></li><li><p>status</p></li><li><p>additions</p></li><li><p>deletions</p></li><li><p>changes</p></li><li><p>patch (diff)</p></li></ul><p>Getting these details is simple:</p><pre><code class="language-python">commit = repo.get_commit(head_sha)
+changed_files: list[dict[str, Any]] = []
+for f in commit.files:
+    changed_files.append({
+        "filename": f.filename,
+        "status": f.status,
+        "additions": f.additions,
+        "deletions": f.deletions,
+        "changes": f.changes,
+        "patch": f.patch,
+    })</code></pre><div class="alert alert-primary"><p>Remember that after defining these functions, you need to convert them to a tool schema that your agent can work with using <code class="language-python">FunctionTool.from_defaults</code>.</p></div><ul><li><p>The agent — <code class="language-python">ContextAgent</code></p></li></ul><p>Finally, you need to create the context manager agent that will orchestrate the whole context retrieval process. You need to equip this agent with the tools (not the functions) you created and the LLM to use. You should use the <code class="language-python">ReAct</code> agent class to create the agent. You should use the following system prompt for this agent:</p><pre><code class="language-python">You are the context gathering agent. When gathering context, you MUST gather \n: 
+    - The details: author, title, body, diff_url, state, and head_sha; \n
+    - Changed files; \n
+    - Any requested for files; \n</code></pre><p>Finally, you should take input and run the agent to answer any questions about the repo. When asking questions, ensure to include the PR number for the PR details tool to know the specific PR to look for.</p><p>Since agent execution takes a long time (and to pass the tests), you need to run the agent with event streaming using the following function:</p><pre><code class="language-python">import asyncio 
+from llama_index.core.agent.workflow import AgentOutput, ToolCall, ToolCallResult
+from llama_index.core.prompts import RichPromptTemplate
+
+async def main():
+    query = input().strip()
+    prompt = RichPromptTemplate(query)
+
+    handler = context_agent.run(prompt.format())
+
+    current_agent = None
+    async for event in handler.stream_events():
+        if hasattr(event, "current_agent_name") and event.current_agent_name != current_agent:
+            current_agent = event.current_agent_name
+            print(f"Current agent: {current_agent}")
+        elif isinstance(event, AgentOutput):
+            if event.response.content:
+                print(event.response.content)
+        elif isinstance(event, ToolCallResult):
+            print(f"Output from tool: {event.tool_output}")
+
+if __name__ == "__main__":
+    asyncio.run(main())
+    git.close()
+</code></pre><p>You should now see what the agent is doing and the outputs of each tool call, as seen in the examples.</p><div class="alert alert-primary"><p><a href="https://docs.llamaindex.ai/en/stable/understanding/agent/streaming/" rel="noopener noreferrer nofollow" target="_blank">Here’s a detailed guide</a> on how streaming LLM outputs is done in LlamaIndex.</p></div><h5 id="objectives">Objectives</h5><p>This is what you need to do here:</p><ul><li><p>Create functions to retrieve data from the GitHub API and ensure they perform the specified actions.</p></li><li><p>Convert each function to a proper tool schema that the agent can use.</p></li><li><p>Create a <code class="language-python">ContextManager</code> agent of class <code class="language-python">ReActAgent</code> that will orchestrate the context retrieval process.</p></li><li><p>Run the agent using the provided <code class="language-python">async main</code> function and ensure the outputs are printed as expected.</p></li></ul><h5 id="examples">Examples</h5><p>Example 1: PR title:</p><pre><code class="language-no-highlight">&gt; What's up with PR number 4? What is the title? 
+Current agent: ContextAgent
+Thought: The current language of the user is: English. I need to use a tool to help me answer the question.
+Action: get_pr_details
+Action Input: {"pr_number": 4}
+Output from tool: {'user': .... 'head_sha': ... }
+Thought: I can answer without using any more tools. I'll use the user's language to answer.
+Answer: The title of PR number 4 is "Added a new recipe rating feature."</code></pre>
+</div>
